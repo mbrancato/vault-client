@@ -1,4 +1,4 @@
 public class VaultLoginData {
-    public String role;
-    public String jwt;
+  public String role;
+  public String jwt;
 }
