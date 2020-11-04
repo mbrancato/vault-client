@@ -19,6 +19,7 @@ import java.util.logging.Logger;
 
 public class VaultClient {
   private final Logger logger = Logger.getLogger(VaultClient.class.getName());
+  private final Map<String, VaultSecret> secrets = new HashMap<>();
   private String vaultAddr;
   private String vaultToken;
   private String vaultNamespace;
@@ -30,7 +31,6 @@ public class VaultClient {
   private Date vaultTokenLeaseTime;
   private long vaultTokenLeaseDuration = 0;
   private boolean authenticated = false;
-  private final Map<String, VaultSecret> secrets = new HashMap<String, VaultSecret>();
 
   VaultClient() {
     this.vaultToken = System.getenv("VAULT_TOKEN");
