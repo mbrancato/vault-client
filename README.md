@@ -9,6 +9,34 @@ Vault authentication, the developer simply needs to replace the location of a
 needed secret in their code with the appropriate `read` method. The Vault 
 Client object will handle authentication renewal and secret / lease renewal.
 
+## Quick Start Example
+
+**Java**
+
+```java
+String dbUser;
+String dbPass;
+VaultClient vault = new VaultClient();
+vault.setAuthMethod("gcp");
+vault.setAuthRole("app_name");
+vault.setVaultAddr("https://myvault.company.org");
+
+dbUser = vault.read("database/creds/my-role", "username");
+dbPass = vault.read("database/creds/my-role", "password");
+```
+
+**python**
+
+```python
+vault = VaultClient()
+vault.set_auth_method("gcp")
+vault.set_auth_role("app_name")
+vault.set_vault_addr("https://myvault.company.org")
+
+db_user = vault.read("database/creds/my-role", "username")
+db_user = vault.read("database/creds/my-role", "password")
+```
+
 ## Feature Matrix
 
 |                       | Java | Python | C#/.NET |
