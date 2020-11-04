@@ -99,7 +99,7 @@ public class VaultClient {
     this.vaultToken = vaultToken;
   }
 
-  public boolean login() throws IOException, InterruptedException, AuthenticationException {
+  public boolean login() throws IOException, AuthenticationException {
     logger.log(Level.FINE, "Performing Auth");
     boolean result = false;
 
@@ -125,14 +125,13 @@ public class VaultClient {
     }
   }
 
-  public String readKv(String name, String key)
-      throws InterruptedException, IOException, AuthenticationException {
+  public String readKv(String name, String key) throws InterruptedException, IOException {
     // Assume kv-v2 mounted at /secret
     return readKv(name, key, 0, "/secret", 2);
   }
 
   public String readKv(String name, String key, int version, String mountPath, int kvVersion)
-      throws InterruptedException, IOException, AuthenticationException {
+      throws InterruptedException, IOException {
     String path;
     String kvKey;
     if (kvVersion == 1) {
@@ -149,8 +148,7 @@ public class VaultClient {
     return null;
   }
 
-  public String read(String path, String key)
-      throws IOException, InterruptedException, AuthenticationException {
+  public String read(String path, String key) throws IOException {
     JsonElement value = readJsonElement(path, key);
     if (value != null) {
       try {
@@ -163,8 +161,7 @@ public class VaultClient {
     return null;
   }
 
-  private JsonElement readJsonElement(String path, String key)
-      throws IOException, InterruptedException, AuthenticationException {
+  private JsonElement readJsonElement(String path, String key) throws IOException {
     logger.log(Level.FINE, String.format("%s read", new Date()));
     final Date currentTime = new Date();
     long secondsSinceTokenLease;
@@ -179,7 +176,11 @@ public class VaultClient {
     }
 
     if (!this.authenticated) {
-      this.authenticated = this.login();
+      try {
+        this.authenticated = this.login();
+      } catch (AuthenticationException e) {
+        e.printStackTrace();
+      }
     }
 
     secondsSinceTokenLease = (currentTime.getTime() - this.vaultTokenLeaseTime.getTime()) / 1000;
@@ -226,7 +227,7 @@ public class VaultClient {
     }
   }
 
-  private void getSecret(VaultSecret secret) throws IOException, InterruptedException {
+  private void getSecret(VaultSecret secret) {
     String secretJson;
     Map<String, String> vaultHeaders = new HashMap<>();
     Gson gson = new Gson();
@@ -270,7 +271,7 @@ public class VaultClient {
     new Thread(updater).start();
   }
 
-  private boolean loginGcp() throws IOException, InterruptedException {
+  private boolean loginGcp() throws IOException {
     logger.log(Level.FINE, "Performing GCP Login");
     Map<String, String> googleHeaders = new HashMap<>();
     String googleUrlParams;
@@ -297,7 +298,7 @@ public class VaultClient {
     return this.loginJwt(jwt);
   }
 
-  private boolean loginJwt(String jwt) throws IOException, InterruptedException {
+  private boolean loginJwt(String jwt) {
     logger.log(Level.FINE, "Performing JWT Login");
     String loginDataJson;
     String loginResultJson;
@@ -354,23 +355,20 @@ public class VaultClient {
     }
   }
 
-  public String httpGet(String uri, Map<String, String> headers)
-      throws IOException, InterruptedException {
+  public String httpGet(String uri, Map<String, String> headers) {
     return httpRequest("GET", uri, headers, null);
   }
 
   // With the Vault API, currently POST and PUT are interchangeable methods
-  public String httpPost(String uri, String data) throws IOException, InterruptedException {
+  public String httpPost(String uri, String data) {
     return httpRequest("POST", uri, new HashMap<>(), data);
   }
 
-  public String httpPost(String uri, Map<String, String> headers, String data)
-      throws IOException, InterruptedException {
+  public String httpPost(String uri, Map<String, String> headers, String data) {
     return httpRequest("POST", uri, headers, data);
   }
 
-  private String httpRequest(String method, String uri, Map<String, String> headers, String data)
-      throws IOException, InterruptedException {
+  private String httpRequest(String method, String uri, Map<String, String> headers, String data) {
     HttpClient client = HttpClient.newHttpClient();
     // TODO: Allow timeout to be configurable
     HttpRequest.Builder requestBuilder =
@@ -386,21 +384,26 @@ public class VaultClient {
       requestBuilder.header(entry.getKey(), entry.getValue());
 
     HttpRequest request = requestBuilder.build();
-    HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+    try {
+      HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
-    if (response.statusCode() > 200 && response.statusCode() < 400) {
-      logger.warning(
-          "Unexpected response. The Vault client is not configured to handle redirects: "
-              + response.headers()
-              + " : "
-              + response.body());
-      return null;
-    } else if (response.statusCode() >= 400) {
-      logger.severe("Error occurred: " + response.body());
-      return null;
+      if (response.statusCode() > 200 && response.statusCode() < 400) {
+        logger.warning(
+            "Unexpected response. The Vault client is not configured to handle redirects: "
+                + response.headers()
+                + " : "
+                + response.body());
+        return null;
+      } else if (response.statusCode() >= 400) {
+        logger.severe("Error occurred: " + response.body());
+        return null;
+      }
+
+      return response.body();
+    } catch (IOException | InterruptedException e) {
+      e.printStackTrace();
     }
-
-    return response.body();
+    return null;
   }
 
   public static class VaultSecret {
@@ -437,11 +440,7 @@ public class VaultClient {
 
     public void run() {
 
-      try {
-        VaultClient.this.getSecret(this.secret);
-      } catch (IOException | InterruptedException e) {
-        e.printStackTrace();
-      }
+      VaultClient.this.getSecret(this.secret);
 
       this.secret.updateLock = false;
     }
@@ -456,10 +455,10 @@ public class VaultClient {
 
     public void run() {
 
-      Map<String, String> vaultHeaders = new HashMap<>();
-      String renewalResultJson = null;
+      String renewalResultJson;
       String renewalDataJson;
       VaultRenewalData renewalData = new VaultRenewalData();
+      Map<String, String> vaultHeaders = new HashMap<>();
       Gson gson = new Gson();
 
       vaultHeaders.put("X-Vault-Token", VaultClient.this.vaultToken);
@@ -468,13 +467,9 @@ public class VaultClient {
       renewalData.increment = this.secret.leaseDuration;
       renewalDataJson = gson.toJson(renewalData);
 
-      try {
-        renewalResultJson =
-            VaultClient.this.httpPost(
-                VaultClient.this.vaultAddr + "/v1/sys/leases/renew", vaultHeaders, renewalDataJson);
-      } catch (IOException | InterruptedException e) {
-        e.printStackTrace();
-      }
+      renewalResultJson =
+          VaultClient.this.httpPost(
+              VaultClient.this.vaultAddr + "/v1/sys/leases/renew", vaultHeaders, renewalDataJson);
 
       JsonObject renewalResult = gson.fromJson(renewalResultJson, JsonObject.class);
       if (renewalResult != null
