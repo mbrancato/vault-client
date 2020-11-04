@@ -154,7 +154,7 @@ public class VaultClient {
       try {
         return value.getAsString();
       } catch (UnsupportedOperationException e) {
-        Gson gson = new Gson();
+        final Gson gson = new Gson();
         return gson.toJson(value);
       }
     }
@@ -229,8 +229,8 @@ public class VaultClient {
 
   private void getSecret(VaultSecret secret) {
     String secretJson;
-    Map<String, String> vaultHeaders = new HashMap<>();
-    Gson gson = new Gson();
+    final Map<String, String> vaultHeaders = new HashMap<>();
+    final Gson gson = new Gson();
 
     vaultHeaders.put("X-Vault-Token", this.vaultToken);
 
@@ -258,14 +258,14 @@ public class VaultClient {
   }
 
   private void renewSecret(VaultSecret secret) {
-    VaultSecretRenewRunnable renewer = new VaultSecretRenewRunnable();
+    final VaultSecretRenewRunnable renewer = new VaultSecretRenewRunnable();
     renewer.setSecret(secret);
 
     new Thread(renewer).start();
   }
 
   private void updateSecret(VaultSecret secret) {
-    VaultSecretUpdateRunnable updater = new VaultSecretUpdateRunnable();
+    final VaultSecretUpdateRunnable updater = new VaultSecretUpdateRunnable();
     updater.setSecret(secret);
 
     new Thread(updater).start();
@@ -273,7 +273,7 @@ public class VaultClient {
 
   private boolean loginGcp() throws IOException {
     logger.log(Level.FINE, "Performing GCP Login");
-    Map<String, String> googleHeaders = new HashMap<>();
+    final Map<String, String> googleHeaders = new HashMap<>();
     String googleUrlParams;
     String googleMetadatUrl;
     String jwt;
@@ -302,11 +302,10 @@ public class VaultClient {
     logger.log(Level.FINE, "Performing JWT Login");
     String loginDataJson;
     String loginResultJson;
-    Type listOfStrings = new TypeToken<ArrayList<String>>() {}.getType();
+    final Type listOfStrings = new TypeToken<ArrayList<String>>() {}.getType();
     final String loginPath = String.format("/v1/auth/%s/login", this.authPath);
-    VaultLoginJwtData loginData = new VaultLoginJwtData();
-
-    Gson gson = new Gson();
+    final VaultLoginJwtData loginData = new VaultLoginJwtData();
+    final Gson gson = new Gson();
 
     loginData.role = this.authRole;
     loginData.jwt = jwt;
@@ -457,9 +456,9 @@ public class VaultClient {
 
       String renewalResultJson;
       String renewalDataJson;
-      VaultRenewalData renewalData = new VaultRenewalData();
-      Map<String, String> vaultHeaders = new HashMap<>();
-      Gson gson = new Gson();
+      final VaultRenewalData renewalData = new VaultRenewalData();
+      final Map<String, String> vaultHeaders = new HashMap<>();
+      final Gson gson = new Gson();
 
       vaultHeaders.put("X-Vault-Token", VaultClient.this.vaultToken);
 
