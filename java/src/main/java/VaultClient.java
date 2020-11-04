@@ -125,13 +125,13 @@ public class VaultClient {
     }
   }
 
-  public String readKv(String name, String key) throws InterruptedException, IOException {
+  public String readKv(String name, String key) throws IOException {
     // Assume kv-v2 mounted at /secret
     return readKv(name, key, 0, "/secret", 2);
   }
 
   public String readKv(String name, String key, int version, String mountPath, int kvVersion)
-      throws InterruptedException, IOException {
+      throws IOException {
     String path;
     String kvKey;
     if (kvVersion == 1) {
