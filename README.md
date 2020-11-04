@@ -34,7 +34,7 @@ vault.set_auth_role("app_name")
 vault.set_vault_addr("https://myvault.company.org")
 
 db_user = vault.read("database/creds/my-role", "username")
-db_user = vault.read("database/creds/my-role", "password")
+db_pass = vault.read("database/creds/my-role", "password")
 ```
 
 ## Feature Matrix
