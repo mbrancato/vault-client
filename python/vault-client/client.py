@@ -1,11 +1,28 @@
 import logging
 import os
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Any, Callable, Union, Optional, Dict
 from urllib.parse import urlencode
 
 import requests
+
+
+def http_get(
+    url: str,
+    headers: Optional[dict] = None,
+    data: Optional[dict] = None,
+):
+    return http_request("get", url=url, headers=headers, data=data)
+
+
+def http_post(
+    url: str,
+    headers: Optional[dict] = None,
+    data: Optional[dict] = None,
+):
+    return http_request("post", url=url, headers=headers, data=data)
 
 
 def http_request(
@@ -42,22 +59,6 @@ def http_request(
         return None
 
 
-def http_get(
-    url: str,
-    headers: Optional[dict] = None,
-    data: Optional[dict] = None,
-):
-    return http_request("get", url=url, headers=headers, data=data)
-
-
-def http_post(
-    url: str,
-    headers: Optional[dict] = None,
-    data: Optional[dict] = None,
-):
-    return http_request("post", url=url, headers=headers, data=data)
-
-
 def dotted_get(path: Union[str, List[str]], obj: dict):
     if isinstance(path, str):
         path = path.split(".")
@@ -84,22 +85,91 @@ class VaultClient:
     @dataclass
     class VaultSecret:
         path: str
-        value: Optional[dict]
-        lease_id: Optional[str]
-        lease_time: Optional[datetime]
+        value: Optional[Dict[Any, Any]] = None
+        lease_id: Optional[str] = None
+        lease_time: Optional[datetime] = None
         lease_duration: Optional[int] = 0
         leased: Optional[bool] = False
         renewable: Optional[bool] = False
         update_lock: Optional[bool] = False
 
-    get_vault_addr: Callable[[Any], Any] = lambda self: self.__vault_addr
-    get_vault_accessor: Callable[[Any], Any] = lambda self: self.__vault_accessor
-    get_vault_namespace: Callable[[Any], Any] = lambda self: self.__vault_namespace
+    class VaultSecretUpdateThread(threading.Thread):
+        def __init__(self, parent, secret):
+            self.parent = parent
+            self.secret = secret
+            thread = threading.Thread(target=self.run, args=())
+            thread.daemon = True
+            super().__init__()
+
+        def run(self):
+
+            self.parent.__secrets[self.secret.path] = self.parent.__get_secret(
+                self.secret
+            )
+            self.parent.__secrets[self.secret.path].update_lock = False
+
+    class VaultSecretRenewThread(threading.Thread):
+        def __init__(self, parent, secret):
+            self.parent = parent
+            self.secret = secret
+            thread = threading.Thread(target=self.run, args=())
+            thread.daemon = True
+            super().__init__()
+
+        def run(self):
+            vault_headers = {"X-Vault-Token": self.parent.__vault_token}
+            renewal_data = {
+                "lease_id": self.secret.lease_id,
+                "increment": self.secret.lease_duration,
+            }
+
+            secret_response = http_post(
+                self.parent.__vault_addr + "/v1/sys/leases/renew",
+                headers=vault_headers,
+                data=renewal_data,
+            )
+
+            if secret_response and dotted_get("lease_id", secret_response):
+                self.secret.lease_time = datetime.now()
+                self.secret.lease_id = dotted_get("lease_id", secret_response)
+                self.secret.renewable = dotted_get("renewable", secret_response)
+                self.secret.lease_duration = dotted_get(
+                    "lease_duration", secret_response
+                )
+
+            self.secret.update_lock = False
+            self.parent.__secrets[self.secret.path] = self.secret
+
     get_auth_method: Callable[[Any], Any] = lambda self: self.__auth_method
     get_auth_path: Callable[[Any], Any] = lambda self: self.__auth_path
     get_auth_role: Callable[[Any], Any] = lambda self: self.__auth_role
+    get_vault_accessor: Callable[[Any], Any] = lambda self: self.__vault_accessor
+    get_vault_addr: Callable[[Any], Any] = lambda self: self.__vault_addr
+    get_vault_namespace: Callable[[Any], Any] = lambda self: self.__vault_namespace
     get_vault_policies: Callable[[Any], Any] = lambda self: self.__vault_policies
     is_authenticated: Callable[[Any], Any] = lambda self: self.__authenticated
+
+    set_auth_method: Callable[[Any, Any], None] = lambda self, x: setattr(
+        self, "__auth_method", x
+    )
+    set_auth_path: Callable[[Any, Any], None] = lambda self, x: setattr(
+        self, "__auth_path", x
+    )
+    set_auth_role: Callable[[Any, Any], None] = lambda self, x: setattr(
+        self, "__auth_role", x
+    )
+    set_vault_accessor: Callable[[Any, Any], None] = lambda self, x: setattr(
+        self, "__vault_accessor", x
+    )
+    set_vault_addr: Callable[[Any, Any], None] = lambda self, x: setattr(
+        self, "__vault_addr", x
+    )
+    set_vault_namespace: Callable[[Any, Any], None] = lambda self, x: setattr(
+        self, "__vault_namespace", x
+    )
+    set_vault_token: Callable[[Any, Any], None] = lambda self, x: setattr(
+        self, "__vault_token", x
+    )
 
     def __init__(self):
         self.__vault_token = os.getenv("VAULT_TOKEN", default=None)
@@ -109,27 +179,6 @@ class VaultClient:
         if self.__vault_token and self.__vault_addr:
             logging.debug("Using existing Token for authentication.")
             self.__authenticated = True
-
-    def set_vault_addr(self, vault_addr):
-        self.__vault_addr = vault_addr
-
-    def set_vault_accessor(self, vault_accessor):
-        self.__vault_accessor = vault_accessor
-
-    def set_vault_namespace(self, vault_namespace):
-        self.__vault_namespace = vault_namespace
-
-    def set_auth_method(self, auth_method):
-        self.__auth_method = auth_method
-
-    def set_auth_path(self, auth_path):
-        self.__auth_path = auth_path
-
-    def set_auth_role(self, auth_role):
-        self.__auth_role = auth_role
-
-    def set_vault_token(self, vault_token):
-        self.__vault_token = vault_token
 
     def read_kv(
         self,
@@ -225,8 +274,6 @@ class VaultClient:
 
     def __read_element(self, path: str, key: str) -> Optional[Dict[str, Any]]:
         current_time = datetime.now()
-        seconds_since_token_lease: int
-        seconds_since_secret_lease: int
 
         if not path or not key:
             return None
@@ -257,10 +304,18 @@ class VaultClient:
             # No lease yet
             self.__secrets[path] = self.__get_secret(secret)
         else:
+            if (
+                not self.__secrets[path].lease_time
+                or not self.__secrets[path].lease_duration
+                or not secret.lease_duration
+            ):
+                raise ValueError("Missing existing secret value when checking lease.")
+            assert isinstance(self.__secrets[path].lease_time, datetime)
+            assert isinstance(current_time, datetime)
             seconds_since_secret_lease = (
-                current_time - self.__secrets[path].lease_time
+                current_time - self.__secrets[path].lease_time  # type: ignore
             ).seconds
-            if seconds_since_secret_lease > self.__secrets[path].lease_duration:
+            if seconds_since_secret_lease > self.__secrets[path].lease_duration:  # type: ignore
                 # Lease expired
                 self.__secrets[path] = self.__get_secret(secret)
             elif float(seconds_since_secret_lease) > (
@@ -269,19 +324,21 @@ class VaultClient:
                 if secret.renewable:
                     if not self.__secrets[path].update_lock:
                         self.__secrets[path].update_lock = True
-                        self.__secrets[path] = self.__renew_secret(secret)
+                        self.__renew_secret(secret)
                 else:
                     # Lease is not renewable
                     if not self.__secrets[path].update_lock:
                         self.__secrets[path].update_lock = True
-                        self.__secrets[path] = self.__update_secret(secret)
+                        self.__update_secret(secret)
             else:
                 # Not expired and not ready for renewal yet
                 pass
 
-        logging.info(f"Lease time: %s", self.__secrets[path].lease_time.isoformat())
+        if not self.__secrets[path].value:
+            raise ValueError("Missing secret value after being read.")
+
         if self.__secrets[path].leased:
-            return dotted_get(key, self.__secrets[path].value)
+            return dotted_get(key, self.__secrets[path].value)  # type: ignore
         else:
             return None
 
@@ -310,3 +367,11 @@ class VaultClient:
                 secret.lease_id = dotted_get("lease_id", secret_response)
 
         return secret
+
+    def __renew_secret(self, secret: VaultSecret):
+        renewer = VaultClient.VaultSecretRenewThread(parent=self, secret=secret)
+        renewer.start()
+
+    def __update_secret(self, secret: VaultSecret):
+        updater = VaultClient.VaultSecretUpdateThread(parent=self, secret=secret)
+        updater.start()
