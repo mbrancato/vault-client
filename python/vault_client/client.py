@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import threading
@@ -69,7 +70,6 @@ def dotted_get(path: Union[str, List[str]], obj: dict):
 
 
 class VaultClient:
-    __secrets: Dict[str, "VaultClient.VaultSecret"]
     __vault_addr: str
     __vault_token: str
     __vault_namespace: str
@@ -81,64 +81,7 @@ class VaultClient:
     __vault_token_lease_time: datetime
     __vault_token_lease_duration: int = 0
     __authenticated: bool = False
-
-    @dataclass
-    class VaultSecret:
-        path: str
-        value: Optional[Dict[Any, Any]] = None
-        lease_id: Optional[str] = None
-        lease_time: Optional[datetime] = None
-        lease_duration: Optional[int] = 0
-        leased: Optional[bool] = False
-        renewable: Optional[bool] = False
-        update_lock: Optional[bool] = False
-
-    class VaultSecretUpdateThread(threading.Thread):
-        def __init__(self, parent, secret):
-            self.parent = parent
-            self.secret = secret
-            thread = threading.Thread(target=self.run, args=())
-            thread.daemon = True
-            super().__init__()
-
-        def run(self):
-
-            self.parent.__secrets[self.secret.path] = self.parent.__get_secret(
-                self.secret
-            )
-            self.parent.__secrets[self.secret.path].update_lock = False
-
-    class VaultSecretRenewThread(threading.Thread):
-        def __init__(self, parent, secret):
-            self.parent = parent
-            self.secret = secret
-            thread = threading.Thread(target=self.run, args=())
-            thread.daemon = True
-            super().__init__()
-
-        def run(self):
-            vault_headers = {"X-Vault-Token": self.parent.__vault_token}
-            renewal_data = {
-                "lease_id": self.secret.lease_id,
-                "increment": self.secret.lease_duration,
-            }
-
-            secret_response = http_post(
-                self.parent.__vault_addr + "/v1/sys/leases/renew",
-                headers=vault_headers,
-                data=renewal_data,
-            )
-
-            if secret_response and dotted_get("lease_id", secret_response):
-                self.secret.lease_time = datetime.now()
-                self.secret.lease_id = dotted_get("lease_id", secret_response)
-                self.secret.renewable = dotted_get("renewable", secret_response)
-                self.secret.lease_duration = dotted_get(
-                    "lease_duration", secret_response
-                )
-
-            self.secret.update_lock = False
-            self.parent.__secrets[self.secret.path] = self.secret
+    __secrets: Dict[str, "VaultClient.VaultSecret"] = {}
 
     get_auth_method: Callable[[Any], Any] = lambda self: self.__auth_method
     get_auth_path: Callable[[Any], Any] = lambda self: self.__auth_path
@@ -178,6 +121,7 @@ class VaultClient:
 
         if self.__vault_token and self.__vault_addr:
             logging.debug("Using existing Token for authentication.")
+            self.__vault_token_lease_duration = 0
             self.__authenticated = True
 
     def read_kv(
@@ -206,7 +150,7 @@ class VaultClient:
             if type(value) in [int, str, float]:
                 return value
             else:
-                return str(value)
+                return json.dumps(value, default=str)
         return None
 
     def login(self):
@@ -284,17 +228,18 @@ class VaultClient:
         if not self.__authenticated:
             self.login()
 
-        seconds_since_token_lease = (
-            datetime.now() - self.__vault_token_lease_time
-        ).seconds
+        if self.__vault_token_lease_duration and self.__vault_token_lease_duration > 0:
+            seconds_since_token_lease = (
+                datetime.now() - self.__vault_token_lease_time
+            ).seconds
 
-        if float(seconds_since_token_lease) > (
-            float(self.__vault_token_lease_duration) * (2.0 / 3.0)
-        ):
-            # TODO: Renew vault token
-            pass
+            if float(seconds_since_token_lease) > (
+                float(self.__vault_token_lease_duration) * (2.0 / 3.0)
+            ):
+                # TODO: Renew vault token
+                pass
 
-        if path not in self.__secrets:
+        if path not in self.__secrets.keys():
             logging.debug("Secret is new")
             self.__secrets[path] = VaultClient.VaultSecret(path=path)
 
@@ -342,7 +287,7 @@ class VaultClient:
         else:
             return None
 
-    def __get_secret(self, secret: VaultSecret):
+    def __get_secret(self, secret: "VaultSecret"):
         vault_headers = {"X-Vault-Token": self.__vault_token}
         secret_response = http_get(
             self.__vault_addr + "/v1" + secret.path, headers=vault_headers
@@ -356,22 +301,80 @@ class VaultClient:
                 secret.renewable = dotted_get("renewable", secret_response)
             if dotted_get("lease_duration", secret_response):
                 secret.lease_duration = dotted_get("lease_duration", secret_response)
-            if dotted_get("lease_duration", secret_response):
-                secret.lease_duration = dotted_get("lease_duration", secret_response)
             else:
                 secret.lease_duration = 0
             # Implement TTL support for KV V2
             if dotted_get("data.data.ttl", secret_response):
-                secret.lease_duration = dotted_get("data.data.ttl", secret_response)
+                secret.lease_duration = int(
+                    dotted_get("data.data.ttl", secret_response)
+                )
             if dotted_get("lease_id", secret_response):
                 secret.lease_id = dotted_get("lease_id", secret_response)
 
         return secret
 
-    def __renew_secret(self, secret: VaultSecret):
+    def __renew_secret(self, secret: "VaultSecret"):
         renewer = VaultClient.VaultSecretRenewThread(parent=self, secret=secret)
         renewer.start()
 
-    def __update_secret(self, secret: VaultSecret):
+    def __update_secret(self, secret: "VaultSecret"):
         updater = VaultClient.VaultSecretUpdateThread(parent=self, secret=secret)
         updater.start()
+
+    @dataclass
+    class VaultSecret:
+        path: str
+        value: Optional[Dict[Any, Any]] = None
+        lease_id: Optional[str] = None
+        lease_time: Optional[datetime] = None
+        lease_duration: Optional[int] = 0
+        leased: Optional[bool] = False
+        renewable: Optional[bool] = False
+        update_lock: Optional[bool] = False
+
+    class VaultSecretUpdateThread(threading.Thread):
+        def __init__(self, parent, secret: "VaultClient.VaultSecret"):
+            self.parent = parent
+            self.secret = secret
+            thread = threading.Thread(target=self.run, args=())
+            thread.daemon = True
+            super().__init__()
+
+        def run(self):
+
+            self.parent._VaultClient__secrets[self.secret.path] = self.parent._VaultClient__get_secret(
+                self.secret
+            )
+            self.parent._VaultClient__secrets[self.secret.path].update_lock = False
+
+    class VaultSecretRenewThread(threading.Thread):
+        def __init__(self, parent, secret: "VaultClient.VaultSecret"):
+            self.parent = parent
+            self.secret = secret
+            thread = threading.Thread(target=self.run, args=())
+            thread.daemon = True
+            super().__init__()
+
+        def run(self):
+            vault_headers = {"X-Vault-Token": self.parent._VaultClient__vault_token}
+            renewal_data = {
+                "lease_id": self.secret.lease_id,
+                "increment": self.secret.lease_duration,
+            }
+
+            secret_response = http_post(
+                self.parent._VaultClient__vault_addr + "/v1/sys/leases/renew",
+                headers=vault_headers,
+                data=renewal_data,
+            )
+
+            if secret_response and dotted_get("lease_id", secret_response):
+                self.secret.lease_time = datetime.now()
+                self.secret.lease_id = dotted_get("lease_id", secret_response)
+                self.secret.renewable = dotted_get("renewable", secret_response)
+                self.secret.lease_duration = dotted_get(
+                    "lease_duration", secret_response
+                )
+
+            self.secret.update_lock = False
+            self.parent._VaultClient__secrets[self.secret.path] = self.secret
