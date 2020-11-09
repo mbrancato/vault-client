@@ -1,5 +1,8 @@
 # Vault Client
 
+![Java](https://github.com/mbrancato/vault-client/workflows/Java%20CI%20with%20Gradle/badge.svg)
+![Python](https://github.com/mbrancato/vault-client/workflows/Python%20package/badge.svg)
+
 Vault Client is designed to be a dead simple client library for Vault consumer 
 applications. The purpose is to implement a robust Vault client that makes it 
 easy for developers to instrument HashiCorp Vault into applications.
