@@ -25,7 +25,7 @@ dbUser = vault.read("database/creds/my-role", "username");
 dbPass = vault.read("database/creds/my-role", "password");
 ```
 
-**python**
+**Python**
 
 ```python
 vault = VaultClient()
@@ -41,12 +41,12 @@ db_pass = vault.read("database/creds/my-role", "password")
 
 |                       | Java | Python | C#/.NET |
 |----------------------:|:----:|:------:|:-------:|
-| Language Support      | ⚠️   | 🚧     | ❌       |
-| Auth Renewal (Async)  | 🚧   | ❌     | ❌       |
-| Generic Read          | ✅   | ❌     | ❌       |
-| KV Read               | ✅   | ❌     | ❌       |
-| Lease Renewal (Async) | ✅   | ❌     | ❌       |
-| JWT Auth              | ✅   | ❌     | ❌       |
+| Language Support      | ⚠️   | ⚠️     | ❌       |
+| Auth Renewal (Async)  | 🚧   | 🚧     | ❌       |
+| Generic Read          | ✅   | ✅     | ❌       |
+| KV Read               | ✅   | ✅     | ❌       |
+| Lease Renewal (Async) | ✅   | 🚧     | ❌       |
+| JWT Auth              | ✅   | ✅     | ❌       |
 | GCP Auth (GCE)        | ✅   | ❌     | ❌       |
 | Azure Auth            | 🚧   | ❌     | ❌       |
 | AppRole Auth          | ❌   | ❌     | ❌       |
