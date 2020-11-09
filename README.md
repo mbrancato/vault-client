@@ -45,9 +45,9 @@ db_pass = vault.read("database/creds/my-role", "password")
 | Auth Renewal (Async)  | 🚧   | 🚧     | ❌       |
 | Generic Read          | ✅   | ✅     | ❌       |
 | KV Read               | ✅   | ✅     | ❌       |
-| Lease Renewal (Async) | ✅   | 🚧     | ❌       |
+| Lease Renewal (Async) | ✅   | ✅     | ❌       |
 | JWT Auth              | ✅   | ✅     | ❌       |
-| GCP Auth (GCE)        | ✅   | ❌     | ❌       |
+| GCP Auth (GCE)        | ✅   | ✅     | ❌       |
 | Azure Auth            | 🚧   | ❌     | ❌       |
 | AppRole Auth          | ❌   | ❌     | ❌       |
 | TLS Auth              | ❌   | ❌     | ❌       |
