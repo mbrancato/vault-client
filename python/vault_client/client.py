@@ -92,27 +92,26 @@ class VaultClient:
     get_vault_policies: Callable[[Any], Any] = lambda self: self.__vault_policies
     is_authenticated: Callable[[Any], Any] = lambda self: self.__authenticated
 
-    set_auth_method: Callable[[Any, Any], None] = lambda self, x: setattr(
-        self, "__auth_method", x
-    )
-    set_auth_path: Callable[[Any, Any], None] = lambda self, x: setattr(
-        self, "__auth_path", x
-    )
-    set_auth_role: Callable[[Any, Any], None] = lambda self, x: setattr(
-        self, "__auth_role", x
-    )
-    set_vault_accessor: Callable[[Any, Any], None] = lambda self, x: setattr(
-        self, "__vault_accessor", x
-    )
-    set_vault_addr: Callable[[Any, Any], None] = lambda self, x: setattr(
-        self, "__vault_addr", x
-    )
-    set_vault_namespace: Callable[[Any, Any], None] = lambda self, x: setattr(
-        self, "__vault_namespace", x
-    )
-    set_vault_token: Callable[[Any, Any], None] = lambda self, x: setattr(
-        self, "__vault_token", x
-    )
+    def set_auth_method(self, auth_method):
+        self.__auth_method = auth_method
+
+    def set_auth_path(self, auth_path):
+        self.__auth_path = auth_path
+
+    def set_auth_role(self, auth_role):
+        self.__auth_role = auth_role
+
+    def set_vault_accessor(self, vault_accessor):
+        self.__vault_accessor = vault_accessor
+
+    def set_vault_addr(self, vault_addr):
+        self.__vault_addr = vault_addr
+
+    def set_vault_namespace(self, vault_namespace):
+        self.__vault_namespace = vault_namespace
+
+    def set_vault_token(self, vault_token):
+        self.__vault_token = vault_token
 
     def __init__(self):
         self.__vault_token = os.getenv("VAULT_TOKEN", default=None)
@@ -342,9 +341,9 @@ class VaultClient:
 
         def run(self):
 
-            self.parent._VaultClient__secrets[self.secret.path] = self.parent._VaultClient__get_secret(
-                self.secret
-            )
+            self.parent._VaultClient__secrets[
+                self.secret.path
+            ] = self.parent._VaultClient__get_secret(self.secret)
             self.parent._VaultClient__secrets[self.secret.path].update_lock = False
 
     class VaultSecretRenewThread(threading.Thread):
