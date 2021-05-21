@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "vault_client"
-version = "0.1.0"
+version = "0.0.1"
 description = "Dead simple HashiCorp Vault consumer client"
 authors = ["Mike Brancato <mike@mikebrancato.com>"]
 license = "Apache License, Version 2.0"
