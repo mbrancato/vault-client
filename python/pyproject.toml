@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "vault_client"
+version = "0.0.1"
+description = "Dead simple HashiCorp Vault consumer client"
+authors = ["Mike Brancato <mike@mikebrancato.com>"]
+license = "Apache License, Version 2.0"
+
+[tool.poetry.dependencies]
+python = ">=3.5.0,<4"
+requests = ">=2.20.0"
+
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
