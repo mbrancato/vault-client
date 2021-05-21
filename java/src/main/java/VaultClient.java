@@ -43,6 +43,32 @@ public class VaultClient {
     }
   }
 
+  VaultClient(String vaultAddr) {
+    this.vaultToken = System.getenv("VAULT_TOKEN");
+    this.vaultAddr = vaultAddr;
+    this.vaultNamespace = System.getenv("VAULT_NAMESPACE");
+
+    if (this.vaultToken != null && this.vaultAddr != null) {
+      this.logger.log(Level.FINE, "Using existing Token for authentication.");
+      this.authenticated = true;
+    }
+  }
+
+  // This is probably the most common case needed
+  VaultClient(String vaultAddr, String authMethod, String authRole, String authPath) {
+    this.vaultToken = System.getenv("VAULT_TOKEN");
+    this.vaultAddr = vaultAddr;
+    this.vaultNamespace = System.getenv("VAULT_NAMESPACE");
+    this.authMethod = authMethod;
+    this.authRole = authRole;
+    this.authPath = authPath;
+
+    if (this.vaultToken != null && this.vaultAddr != null) {
+      this.logger.log(Level.FINE, "Using existing Token for authentication.");
+      this.authenticated = true;
+    }
+  }
+
   public String getVaultAddr() {
     return vaultAddr;
   }
@@ -152,9 +178,8 @@ public class VaultClient {
       case "gcp":
         result = this.loginGcp();
         break;
-      case "jwt":
-        result = this.loginJwt(null);
-        break;
+        // JWT login method should really be called directly
+        // TODO: Find a clean way to reauthenticate when token using JWT auth expires
       default:
         break;
     }
@@ -348,9 +373,15 @@ public class VaultClient {
       }
     }
 
-    secondsSinceTokenLease = (currentTime.getTime() - this.vaultTokenLeaseTime.getTime()) / 1000;
-    if ((float) secondsSinceTokenLease > ((float) this.vaultTokenLeaseDuration * (2.0 / 3.0))) {
-      // TODO: Renew vault token
+    if (this.vaultTokenLeaseTime != null) {
+      secondsSinceTokenLease = (currentTime.getTime() - this.vaultTokenLeaseTime.getTime()) / 1000;
+      if ((float) secondsSinceTokenLease > ((float) this.vaultTokenLeaseDuration * (2.0 / 3.0))) {
+        try {
+          this.authenticated = this.login();
+        } catch (AuthenticationException e) {
+          e.printStackTrace();
+        }
+      }
     }
 
     if (!this.secrets.containsKey(path)) {
@@ -384,7 +415,8 @@ public class VaultClient {
       }
     }
 
-    logger.log(Level.INFO, String.format("Lease time: %s", secret.leaseTime));
+    logger.log(
+        Level.INFO, String.format("Lease time for secret: %s : %s", secret.path, secret.leaseTime));
     if (secret.leased) {
       return getDottedJsonPath(key, secret.value);
     } else {

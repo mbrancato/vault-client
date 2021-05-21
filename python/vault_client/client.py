@@ -199,8 +199,8 @@ class VaultClient:
 
         if self.__auth_method == "gcp":
             result = self.login_gcp()
-        elif self.__auth_method == "jwt":
-            result = self.login_jwt("")
+        # JWT login method should really be called directly
+        # TODO: Find a clean way to reauthenticate when token using JWT auth expires
 
         if not result:
             raise RuntimeError("Unable to authenticate to Vault.")
@@ -271,8 +271,7 @@ class VaultClient:
             if float(seconds_since_token_lease) > (
                 float(self.__vault_token_lease_duration) * (2.0 / 3.0)
             ):
-                # TODO: Renew vault token
-                pass
+                self.login()
 
         if path not in self.__secrets.keys():
             logging.debug("Secret is new")
