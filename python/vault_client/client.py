@@ -4,33 +4,26 @@ import os
 import threading
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Any, Callable, Union, Optional, Dict
+from typing import List, Any, Union, Optional, Dict
 from urllib.parse import urlencode
 
 import requests
 
 
 def http_get(
-    url: str,
-    headers: Optional[dict] = None,
-    data: Optional[dict] = None,
+    url: str, headers: Optional[dict] = None, data: Optional[dict] = None,
 ):
     return http_request("get", url=url, headers=headers, data=data)
 
 
 def http_post(
-    url: str,
-    headers: Optional[dict] = None,
-    data: Optional[dict] = None,
+    url: str, headers: Optional[dict] = None, data: Optional[dict] = None,
 ):
     return http_request("post", url=url, headers=headers, data=data)
 
 
 def http_request(
-    method: str,
-    url: str,
-    headers: Optional[dict] = None,
-    data: Optional[dict] = None,
+    method: str, url: str, headers: Optional[dict] = None, data: Optional[dict] = None,
 ):
     try:
         if method.lower() == "get":
@@ -44,14 +37,29 @@ def http_request(
         else:
             return None
 
-        if 300 <= response.status_code < 500:
+        if response.status_code == 404:
+            logging.debug("Secret or path not found in Vault.")
+            return None
+        elif response.status_code == 403:
+            raise PermissionError(
+                "Access to Vault secret denied. Check the token, authentication method, or policies."
+            )
+        elif response.status_code == 307:
+            logging.error(
+                "Vault request was not successful. Request may have been sent to a Vault standby server."
+            )
+            return None
+        elif response.status_code == 502:
+            logging.debug("Vault request was throttled.")
+            return None
+        elif 300 <= response.status_code < 500:
             logging.warning(
                 "Unexpected response. The Vault client is not configured to handle redirects: "
-                + f"{response.headers} : {response.text}"
+                + f"{response.status_code} : {response.headers} : {response.text}"
             )
             return None
         elif response.status_code >= 500:
-            logging.error(f"Error occurred: {response.text}")
+            logging.error(f"Error occurred while accessing Vault: {response.text}")
             return None
 
         return response.json()
@@ -82,41 +90,70 @@ class VaultClient:
     __vault_token_lease_duration: int = 0
     __authenticated: bool = False
     __secrets: Dict[str, "VaultClient.VaultSecret"] = {}
+    __default_kvv2_ttl: int = 300
 
-    get_auth_method: Callable[[Any], Any] = lambda self: self.__auth_method
-    get_auth_path: Callable[[Any], Any] = lambda self: self.__auth_path
-    get_auth_role: Callable[[Any], Any] = lambda self: self.__auth_role
-    get_vault_accessor: Callable[[Any], Any] = lambda self: self.__vault_accessor
-    get_vault_addr: Callable[[Any], Any] = lambda self: self.__vault_addr
-    get_vault_namespace: Callable[[Any], Any] = lambda self: self.__vault_namespace
-    get_vault_policies: Callable[[Any], Any] = lambda self: self.__vault_policies
-    is_authenticated: Callable[[Any], Any] = lambda self: self.__authenticated
+    def get_auth_method(self) -> str:
+        return self.__auth_method
 
-    def set_auth_method(self, auth_method):
+    def get_auth_role(self) -> str:
+        return self.__auth_role
+
+    def get_vault_accessor(self) -> str:
+        return self.__vault_accessor
+
+    def get_vault_addr(self) -> str:
+        return self.__vault_addr
+
+    def get_vault_namespace(self) -> str:
+        return self.__vault_namespace
+
+    def get_vault_policies(self) -> List[str]:
+        return self.__vault_policies
+
+    def is_authenticated(self) -> bool:
+        return self.__authenticated
+
+    def set_auth_method(self, auth_method) -> None:
         self.__auth_method = auth_method
 
-    def set_auth_path(self, auth_path):
+    def set_auth_path(self, auth_path) -> None:
         self.__auth_path = auth_path
 
-    def set_auth_role(self, auth_role):
+    def set_auth_role(self, auth_role) -> None:
         self.__auth_role = auth_role
 
-    def set_vault_accessor(self, vault_accessor):
+    def set_vault_accessor(self, vault_accessor) -> None:
         self.__vault_accessor = vault_accessor
 
-    def set_vault_addr(self, vault_addr):
+    def set_vault_addr(self, vault_addr) -> None:
         self.__vault_addr = vault_addr
 
-    def set_vault_namespace(self, vault_namespace):
+    def set_vault_namespace(self, vault_namespace) -> None:
         self.__vault_namespace = vault_namespace
 
-    def set_vault_token(self, vault_token):
+    def set_vault_token(self, vault_token) -> None:
         self.__vault_token = vault_token
 
-    def __init__(self):
-        self.__vault_token = os.getenv("VAULT_TOKEN", default=None)
-        self.__vault_addr = os.getenv("VAULT_ADDR", default=None)
-        self.__vault_namespace = os.getenv("VAULT_NAMESPACE", default=None)
+    def __init__(
+        self,
+        vault_addr: str = "",
+        vault_namespace: str = "",
+        auth_method: str = "",
+        auth_path: str = "",
+        auth_role: str = "",
+        default_kv_v2_ttl: int = __default_kvv2_ttl,
+    ):
+        self.__vault_addr = vault_addr
+        self.__vault_namespace = vault_namespace
+        self.__auth_method = auth_method
+        self.__auth_path = auth_path
+        self.__auth_role = auth_role
+        self.__default_kvv2_ttl = default_kv_v2_ttl
+        self.__vault_token = os.getenv("VAULT_TOKEN", default="")
+        if not self.__vault_addr:
+            self.__vault_addr = os.getenv("VAULT_ADDR", default="")
+        if not self.__vault_namespace:
+            self.__vault_namespace = os.getenv("VAULT_NAMESPACE", default="")
 
         if self.__vault_token and self.__vault_addr:
             logging.debug("Using existing Token for authentication.")
@@ -130,7 +167,7 @@ class VaultClient:
         version: int = 0,
         mount_path: str = "/secret",
         kv_version: int = 2,
-    ):
+    ) -> Any:
         if kv_version == 1:
             path = f"{mount_path}/{name}"
             kv_key = f"data.{key}"
@@ -152,7 +189,7 @@ class VaultClient:
                 return json.dumps(value, default=str)
         return None
 
-    def login(self):
+    def login(self) -> bool:
         logging.debug("Performing Auth")
         result: bool = False
 
@@ -163,7 +200,7 @@ class VaultClient:
         if self.__auth_method == "gcp":
             result = self.login_gcp()
         elif self.__auth_method == "jwt":
-            result = self.login_jwt(None)
+            result = self.login_jwt("")
 
         if not result:
             raise RuntimeError("Unable to authenticate to Vault.")
@@ -195,11 +232,10 @@ class VaultClient:
     def login_jwt(self, jwt: str) -> bool:
         logging.debug("Performing JWT Login")
         login_result_json: str
-        login_path: str = f"/v1/auth/{self.__auth_path}/login"
+        login_path = f"/v1/auth/{self.__auth_path}/login"
         vault_login_jwt_data = {"role": self.__auth_role, "jwt": jwt}
         login_result = http_post(
-            self.__vault_addr + login_path,
-            data=vault_login_jwt_data,
+            self.__vault_addr + login_path, data=vault_login_jwt_data,
         )
 
         if login_result and dotted_get("auth.client_token", login_result):
@@ -227,7 +263,7 @@ class VaultClient:
         if not self.__authenticated:
             self.login()
 
-        if self.__vault_token_lease_duration and self.__vault_token_lease_duration > 0:
+        if self.__vault_token_lease_duration > 0:
             seconds_since_token_lease = (
                 datetime.now() - self.__vault_token_lease_time
             ).seconds
@@ -248,18 +284,14 @@ class VaultClient:
             # No lease yet
             self.__secrets[path] = self.__get_secret(secret)
         else:
-            if (
-                not self.__secrets[path].lease_time
-                or not self.__secrets[path].lease_duration
-                or not secret.lease_duration
-            ):
+            if not self.__secrets[path].lease_time:
                 raise ValueError("Missing existing secret value when checking lease.")
             assert isinstance(self.__secrets[path].lease_time, datetime)
             assert isinstance(current_time, datetime)
             seconds_since_secret_lease = (
                 current_time - self.__secrets[path].lease_time  # type: ignore
             ).seconds
-            if seconds_since_secret_lease > self.__secrets[path].lease_duration:  # type: ignore
+            if seconds_since_secret_lease >= self.__secrets[path].lease_duration:  # type: ignore
                 # Lease expired
                 self.__secrets[path] = self.__get_secret(secret)
             elif float(seconds_since_secret_lease) > (
@@ -301,7 +333,7 @@ class VaultClient:
             if dotted_get("lease_duration", secret_response):
                 secret.lease_duration = dotted_get("lease_duration", secret_response)
             else:
-                secret.lease_duration = 0
+                secret.lease_duration = self.__default_kvv2_ttl
             # Implement TTL support for KV V2
             if dotted_get("data.data.ttl", secret_response):
                 secret.lease_duration = int(
@@ -326,7 +358,7 @@ class VaultClient:
         value: Optional[Dict[Any, Any]] = None
         lease_id: Optional[str] = None
         lease_time: Optional[datetime] = None
-        lease_duration: Optional[int] = 0
+        lease_duration: int = 0
         leased: Optional[bool] = False
         renewable: Optional[bool] = False
         update_lock: Optional[bool] = False

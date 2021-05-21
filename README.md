@@ -31,10 +31,11 @@ dbPass = vault.read("database/creds/my-role", "password");
 **Python**
 
 ```python
-vault = VaultClient()
-vault.set_auth_method("gcp")
-vault.set_auth_role("app_name")
-vault.set_vault_addr("https://myvault.company.org")
+vault = VaultClient(
+    vault_addr="https://myvault.company.org",
+    auth_method="gcp",
+    auth_role="app_name",
+)
 
 db_user = vault.read("database/creds/my-role", "username")
 db_pass = vault.read("database/creds/my-role", "password")
