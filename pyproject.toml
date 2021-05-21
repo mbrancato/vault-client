@@ -1,14 +1,23 @@
 [tool.poetry]
-name = "vault_client"
+name = "simple-vault-client"
+packages = [
+    { include = "vault_client", from="python" }
+]
 version = "0.0.1"
 description = "Dead simple HashiCorp Vault consumer client"
+keywords = ["hashicorp", "vault", "client"]
 authors = ["Mike Brancato <mike@mikebrancato.com>"]
-license = "Apache License, Version 2.0"
+homepage = "https://github.com/mbrancato/vault-client"
+repository = "https://github.com/mbrancato/vault-client"
+readme = "README.md"
+license = "Apache-2.0"
+include = [
+    "LICENSE",
+]
 
 [tool.poetry.dependencies]
 python = ">=3.5.0,<4"
 requests = ">=2.20.0"
-
 
 [tool.poetry.dev-dependencies]
 
